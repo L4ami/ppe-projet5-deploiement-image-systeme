@@ -1,0 +1,18 @@
+# Images disque et ISO : trop volumineux pour un depot Git
+*.iso
+*.img
+*.vmdk
+clonezilla/
+deploiement/PPE-P5-Config.iso
+
+# Sorties brutes de l'outil de capture
+captures/Screenpresso/
+captures/non-retenues/
+captures/**/Originals/
+captures/**/Thumbnails/
+
+# Fichiers temporaires Windows
+Thumbs.db
+desktop.ini
+*.tmp
+~$*

@@ -1,0 +1,296 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ===========================================================================
+  Projet 5 - Deploiement standardise d'un poste
+  Fichier de reponses Windows Setup (autounattend.xml)
+  Cible  : Windows 11 Pro 24H2 x64 - poste standard STD-PG-NN - Arve Services SA
+  Auteur : Paul Giocanti (PG) - 17.09.2026
+  ===========================================================================
+
+  A quoi sert ce fichier :
+  Pendant une installation normale, Windows Setup pose une quinzaine de questions
+  (langue, disque, edition, compte, confidentialite...). Ce fichier contient les
+  reponses a l'avance. Setup le lit automatiquement s'il le trouve a la racine
+  d'un lecteur amovible ou d'un CD/DVD, et n'affiche plus aucune question.
+
+  Les 3 "passes" utilisees ci-dessous correspondent aux 3 moments de l'installation :
+    1. windowsPE   -> avant que Windows existe : langue de setup, partitionnement, edition
+    2. specialize  -> Windows est copie sur le disque : identite du poste, fuseau horaire
+    3. oobeSystem  -> premier demarrage : comptes, ecrans de bienvenue, script post-install
+
+  ADAPTATION SELON LA LANGUE DU MEDIA D'INSTALLATION :
+  les noms des groupes locaux sont traduits. Sur un media FRANCAIS, garder
+  "Administrateurs" et "Utilisateurs". Sur un media ANGLAIS, remplacer par
+  "Administrators" et "Users" (2 balises <Group> dans la passe oobeSystem).
+-->
+<unattend xmlns="urn:schemas-microsoft-com:unattend">
+
+  <!-- ================= PASSE 1 : windowsPE ================= -->
+  <settings pass="windowsPE">
+
+    <!-- Langue de l'assistant d'installation et parametres regionaux suisses -->
+    <component name="Microsoft-Windows-International-Core-WinPE"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral" versionScope="nonSxS">
+      <SetupUILanguage>
+        <UILanguage>fr-FR</UILanguage>
+      </SetupUILanguage>
+      <InputLocale>fr-CH</InputLocale>
+      <SystemLocale>fr-CH</SystemLocale>
+      <UILanguage>fr-FR</UILanguage>
+      <UserLocale>fr-CH</UserLocale>
+    </component>
+
+    <component name="Microsoft-Windows-Setup"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral" versionScope="nonSxS">
+
+      <!--
+        Neutralisation des controles materiels de Windows 11.
+        Utile uniquement en laboratoire (machine virtuelle sans TPM materiel).
+        Sur le parc physique reel, le cahier des charges impose TPM 2.0 +
+        Secure Boot : ce bloc devient inutile et doit etre retire.
+      -->
+      <RunSynchronous>
+        <RunSynchronousCommand wcm:action="add" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+          <Order>1</Order>
+          <Description>Neutralisation controle TPM</Description>
+          <Path>reg add HKLM\SYSTEM\Setup\LabConfig /v BypassTPMCheck /t REG_DWORD /d 1 /f</Path>
+        </RunSynchronousCommand>
+        <RunSynchronousCommand wcm:action="add" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+          <Order>2</Order>
+          <Description>Neutralisation controle Secure Boot</Description>
+          <Path>reg add HKLM\SYSTEM\Setup\LabConfig /v BypassSecureBootCheck /t REG_DWORD /d 1 /f</Path>
+        </RunSynchronousCommand>
+        <RunSynchronousCommand wcm:action="add" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+          <Order>3</Order>
+          <Description>Neutralisation controle RAM</Description>
+          <Path>reg add HKLM\SYSTEM\Setup\LabConfig /v BypassRAMCheck /t REG_DWORD /d 1 /f</Path>
+        </RunSynchronousCommand>
+        <RunSynchronousCommand wcm:action="add" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+          <Order>4</Order>
+          <Description>Neutralisation controle CPU</Description>
+          <Path>reg add HKLM\SYSTEM\Setup\LabConfig /v BypassCPUCheck /t REG_DWORD /d 1 /f</Path>
+        </RunSynchronousCommand>
+        <RunSynchronousCommand wcm:action="add" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+          <Order>5</Order>
+          <Description>Neutralisation controle disque</Description>
+          <Path>reg add HKLM\SYSTEM\Setup\LabConfig /v BypassStorageCheck /t REG_DWORD /d 1 /f</Path>
+        </RunSynchronousCommand>
+      </RunSynchronous>
+
+      <!--
+        Partitionnement GPT conforme au cahier des charges, section 3 :
+          1. EFI     300 Mo  FAT32  - chargeur de demarrage lu par l'UEFI
+          2. MSR      16 Mo         - zone technique reservee a Windows
+          3. Windows  reste  NTFS   - systeme + donnees, lettre C
+        WillWipeDisk = true : le disque 0 est efface integralement.
+        Extend = true sur la partition 3 : le fichier fonctionne quelle que soit
+        la taille du disque, sans jamais etre modifie.
+      -->
+      <DiskConfiguration>
+        <WillShowUI>OnError</WillShowUI>
+        <Disk wcm:action="add" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+          <DiskID>0</DiskID>
+          <WillWipeDisk>true</WillWipeDisk>
+          <CreatePartitions>
+            <CreatePartition wcm:action="add">
+              <Order>1</Order>
+              <Type>EFI</Type>
+              <Size>300</Size>
+            </CreatePartition>
+            <CreatePartition wcm:action="add">
+              <Order>2</Order>
+              <Type>MSR</Type>
+              <Size>16</Size>
+            </CreatePartition>
+            <CreatePartition wcm:action="add">
+              <Order>3</Order>
+              <Type>Primary</Type>
+              <Extend>true</Extend>
+            </CreatePartition>
+          </CreatePartitions>
+          <ModifyPartitions>
+            <ModifyPartition wcm:action="add">
+              <Order>1</Order>
+              <PartitionID>1</PartitionID>
+              <Format>FAT32</Format>
+              <Label>Systeme</Label>
+            </ModifyPartition>
+            <ModifyPartition wcm:action="add">
+              <Order>2</Order>
+              <PartitionID>2</PartitionID>
+            </ModifyPartition>
+            <ModifyPartition wcm:action="add">
+              <Order>3</Order>
+              <PartitionID>3</PartitionID>
+              <Format>NTFS</Format>
+              <Label>Windows</Label>
+              <Letter>C</Letter>
+            </ModifyPartition>
+          </ModifyPartitions>
+        </Disk>
+      </DiskConfiguration>
+
+      <ImageInstall>
+        <OSImage>
+          <InstallTo>
+            <DiskID>0</DiskID>
+            <PartitionID>3</PartitionID>
+          </InstallTo>
+          <WillShowUI>OnError</WillShowUI>
+        </OSImage>
+      </ImageInstall>
+
+      <UserData>
+        <AcceptEula>true</AcceptEula>
+        <FullName>Arve Services SA</FullName>
+        <Organization>Arve Services SA</Organization>
+        <!--
+          Cle publique generique Microsoft ("KMS client setup key") de Windows 11 Pro.
+          Ce n'est PAS une cle d'activation : elle sert uniquement a indiquer a Setup
+          quelle edition installer quand le media en contient plusieurs. Elle evite
+          d'avoir a deviner le nom ou l'index de l'image dans install.wim, qui
+          changent selon la langue du media. L'activation reelle se fait ensuite
+          avec la licence de l'entreprise.
+        -->
+        <ProductKey>
+          <Key>VK7JG-NPHTM-C97JM-9MPGT-3V66T</Key>
+          <WillShowUI>OnError</WillShowUI>
+        </ProductKey>
+      </UserData>
+
+    </component>
+  </settings>
+
+  <!-- ================= PASSE 2 : specialize ================= -->
+  <settings pass="specialize">
+
+    <component name="Microsoft-Windows-Shell-Setup"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral" versionScope="nonSxS">
+      <!--
+        "*" = nom genere aleatoirement par Windows.
+        Le nom definitif STD-PG-NN est applique par le script de post-installation,
+        qui lit le numero du poste dans le fichier poste.txt du media de configuration.
+        Cela permet d'utiliser UN SEUL fichier de reponses pour les 10 postes.
+      -->
+      <ComputerName>*</ComputerName>
+      <TimeZone>W. Europe Standard Time</TimeZone>
+      <RegisteredOrganization>Arve Services SA</RegisteredOrganization>
+      <RegisteredOwner>Service informatique</RegisteredOwner>
+    </component>
+
+    <!--
+      VERSION SIMPLIFIEE (17.09.2026, apres echec du premier deploiement).
+      Deux composants ont ete retires de cette passe :
+
+        - Microsoft-Windows-UnattendedJoin (JoinWorkgroup ARVE)
+        - Microsoft-Windows-Deployment (RunSynchronous reg add BypassNRO)
+
+      Motif : la passe specialize a echoue sur STD-PG-02 avec le message
+      "Windows n'a pas pu terminer l'installation". Le principe retenu est de
+      ne garder dans le fichier de reponses QUE ce que lui seul peut faire
+      (partitionner le disque, choisir l'edition, supprimer l'OOBE), et de
+      laisser au script PowerShell tout ce qu'il sait faire apres coup.
+
+      Consequences : aucune. Le groupe de travail ARVE est applique par
+      p5-post-install.ps1 (etape 1/9), et la cle BypassNRO devient inutile
+      des lors que les comptes locaux sont definis dans la passe oobeSystem.
+    -->
+
+  </settings>
+
+  <!-- ================= PASSE 3 : oobeSystem ================= -->
+  <settings pass="oobeSystem">
+
+    <component name="Microsoft-Windows-International-Core"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral" versionScope="nonSxS">
+      <InputLocale>fr-CH</InputLocale>
+      <SystemLocale>fr-CH</SystemLocale>
+      <UILanguage>fr-FR</UILanguage>
+      <UserLocale>fr-CH</UserLocale>
+    </component>
+
+    <component name="Microsoft-Windows-Shell-Setup"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral" versionScope="nonSxS">
+
+      <!-- Suppression de tous les ecrans de bienvenue -->
+      <OOBE>
+        <HideEULAPage>true</HideEULAPage>
+        <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>
+        <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
+        <HideLocalAccountScreen>true</HideLocalAccountScreen>
+        <HideWirelessSetupInHDS>true</HideWirelessSetupInHDS>
+        <NetworkLocation>Work</NetworkLocation>
+        <ProtectYourPC>3</ProtectYourPC>
+      </OOBE>
+
+      <!--
+        VERSION RESSERREE (2e correction, 17.09.2026).
+        Un SEUL compte est cree ici : adm.local, indispensable a l'ouverture de
+        session automatique qui lance le script. Le compte "utilisateur" est
+        cree par p5-post-install.ps1 (etape 2/9), qui designe les groupes par
+        leur identifiant de securite (SID S-1-5-32-545) et non par leur nom
+        traduit - methode beaucoup plus robuste.
+
+        Le groupe est ecrit "Administrators" et non "Administrateurs" : c'est
+        la valeur des exemples officiels Microsoft, resolue en interne par SID.
+        Un libelle traduit qui ne serait pas reconnu ferait echouer la creation
+        du compte, et donc toute la passe oobeSystem.
+      -->
+      <UserAccounts>
+        <LocalAccounts>
+          <LocalAccount wcm:action="add" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+            <Name>adm.local</Name>
+            <DisplayName>Administrateur local</DisplayName>
+            <Description>Compte technique du service informatique</Description>
+            <Group>Administrators</Group>
+            <Password>
+              <Value>Adm.Local-2026!</Value>
+              <PlainText>true</PlainText>
+            </Password>
+          </LocalAccount>
+        </LocalAccounts>
+      </UserAccounts>
+
+      <!--
+        Ouverture de session automatique UNE SEULE FOIS, pour que le script de
+        post-installation puisse s'executer avec les droits d'administrateur.
+        LogonCount = 1 : Windows desactive l'ouverture automatique juste apres.
+      -->
+      <AutoLogon>
+        <Enabled>true</Enabled>
+        <LogonCount>1</LogonCount>
+        <Username>adm.local</Username>
+        <Password>
+          <Value>Adm.Local-2026!</Value>
+          <PlainText>true</PlainText>
+        </Password>
+      </AutoLogon>
+
+      <!--
+        Recherche du media de configuration sur les lecteurs D a P, puis lancement
+        du script de post-installation. La boucle evite de dependre de la lettre
+        attribuee au lecteur de CD, qui varie d'une machine a l'autre.
+      -->
+      <FirstLogonCommands>
+        <SynchronousCommand wcm:action="add" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+          <Order>1</Order>
+          <Description>Post-installation du poste standard</Description>
+          <CommandLine>cmd.exe /c for %d in (D E F G H I J K L M N O P) do @if exist %d:\PPE-P5\demarrer-post-install.cmd %d:\PPE-P5\demarrer-post-install.cmd</CommandLine>
+          <RequiresUserInput>true</RequiresUserInput>
+        </SynchronousCommand>
+      </FirstLogonCommands>
+
+    </component>
+  </settings>
+
+</unattend>

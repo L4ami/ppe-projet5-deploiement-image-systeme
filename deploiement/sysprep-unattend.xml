@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ===========================================================================
+  Projet 5 - Deploiement standardise d'un poste
+  Fichier de reponses utilise par SYSPREP (branche "image systeme")
+  Auteur : Paul Giocanti (PG) - 17.09.2026
+  ===========================================================================
+
+  Difference avec autounattend.xml :
+  autounattend.xml repond aux questions d'une INSTALLATION de Windows.
+  Ce fichier-ci repond aux questions posees au premier demarrage d'une image
+  RESTAUREE. Il n'y a donc pas de passe "windowsPE" (pas de partitionnement,
+  pas de choix d'edition : tout cela est deja dans l'image).
+
+  Commande a executer sur le poste de reference, juste avant la capture :
+    C:\Windows\System32\Sysprep\sysprep.exe /generalize /oobe /shutdown ^
+        /unattend:C:\Deploiement\sysprep-unattend.xml
+
+    /generalize -> efface l'identite unique du poste (SID, journaux, pilotes
+                   specifiques). C'est l'etape qui rend l'image reutilisable
+                   sur une autre machine sans conflit sur le reseau.
+    /oobe       -> au prochain demarrage, la machine repasse par les ecrans
+                   de bienvenue, auxquels ce fichier repond automatiquement.
+    /shutdown   -> extinction, pour capturer un disque propre et non monte.
+-->
+<unattend xmlns="urn:schemas-microsoft-com:unattend">
+
+  <!-- ================= PASSE generalize ================= -->
+  <settings pass="generalize">
+    <component name="Microsoft-Windows-PnpSysprep"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral" versionScope="nonSxS">
+      <!--
+        false = les pilotes lies au materiel du poste de reference sont retires.
+        L'image redetecte le materiel de la machine cible a la restauration :
+        c'est ce qui permet a une meme image de servir sur des machines dont
+        la carte reseau ou le controleur de disque different.
+      -->
+      <PersistAllDeviceInstalls>false</PersistAllDeviceInstalls>
+      <DoNotCleanUpNonPresentDevices>false</DoNotCleanUpNonPresentDevices>
+    </component>
+  </settings>
+
+  <!-- ================= PASSE specialize ================= -->
+  <settings pass="specialize">
+    <component name="Microsoft-Windows-Shell-Setup"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral" versionScope="nonSxS">
+      <ComputerName>*</ComputerName>
+      <TimeZone>W. Europe Standard Time</TimeZone>
+      <RegisteredOrganization>Arve Services SA</RegisteredOrganization>
+    </component>
+
+    <component name="Microsoft-Windows-UnattendedJoin"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral" versionScope="nonSxS">
+      <Identification>
+        <JoinWorkgroup>ARVE</JoinWorkgroup>
+      </Identification>
+    </component>
+
+    <component name="Microsoft-Windows-Deployment"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral" versionScope="nonSxS">
+      <RunSynchronous>
+        <RunSynchronousCommand wcm:action="add" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+          <Order>1</Order>
+          <Description>Autoriser la fin de l'OOBE sans compte Microsoft</Description>
+          <Path>reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\OOBE" /v BypassNRO /t REG_DWORD /d 1 /f</Path>
+        </RunSynchronousCommand>
+      </RunSynchronous>
+    </component>
+  </settings>
+
+  <!-- ================= PASSE oobeSystem ================= -->
+  <settings pass="oobeSystem">
+    <component name="Microsoft-Windows-International-Core"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral" versionScope="nonSxS">
+      <InputLocale>fr-CH</InputLocale>
+      <SystemLocale>fr-CH</SystemLocale>
+      <UILanguage>fr-FR</UILanguage>
+      <UserLocale>fr-CH</UserLocale>
+    </component>
+
+    <component name="Microsoft-Windows-Shell-Setup"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral" versionScope="nonSxS">
+      <OOBE>
+        <HideEULAPage>true</HideEULAPage>
+        <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>
+        <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
+        <HideLocalAccountScreen>true</HideLocalAccountScreen>
+        <HideWirelessSetupInHDS>true</HideWirelessSetupInHDS>
+        <NetworkLocation>Work</NetworkLocation>
+        <ProtectYourPC>3</ProtectYourPC>
+      </OOBE>
+
+      <!--
+        Aucun bloc <UserAccounts> ici : les comptes adm.local et utilisateur
+        existent deja dans l'image, Sysprep /generalize ne les supprime pas.
+        Tenter de les recreer ferait echouer la passe oobeSystem.
+      -->
+      <AutoLogon>
+        <Enabled>true</Enabled>
+        <LogonCount>1</LogonCount>
+        <Username>adm.local</Username>
+        <Password>
+          <Value>Adm.Local-2026!</Value>
+          <PlainText>true</PlainText>
+        </Password>
+      </AutoLogon>
+
+      <FirstLogonCommands>
+        <SynchronousCommand wcm:action="add" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+          <Order>1</Order>
+          <Description>Finalisation du poste issu de l'image</Description>
+          <CommandLine>cmd.exe /c for %d in (D E F G H I J K L M N O P) do @if exist %d:\PPE-P5\demarrer-post-image.cmd %d:\PPE-P5\demarrer-post-image.cmd</CommandLine>
+          <RequiresUserInput>true</RequiresUserInput>
+        </SynchronousCommand>
+      </FirstLogonCommands>
+    </component>
+  </settings>
+
+</unattend>

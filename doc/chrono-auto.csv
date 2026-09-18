@@ -1,0 +1,7 @@
+﻿"Numero";"Phase";"Debut";"Fin";"DureeSecondes";"DureeMinutes"
+"1";"Creation et parametrage de la machine virtuelle";"09:14:24";"09:14:26";"3";"0,05"
+"2";"Montage des deux ISO et demarrage";"09:14:26";"09:14:39";"13";"0,22"
+"3";"Installation de Windows pilotee par le fichier de reponses (sans intervention)";"09:14:39";"09:28:36";"837";"13,95"
+"4";"Phase de bienvenue OOBE (a la main)";"09:28:36";"09:35:53";"436";"7,27"
+"5";"Execution du script de post-installation (sans intervention)";"09:35:53";"09:53:03";"1030";"17,17"
+"6";"Controle de conformite";"09:53:03";"10:01:50";"527";"8,78"

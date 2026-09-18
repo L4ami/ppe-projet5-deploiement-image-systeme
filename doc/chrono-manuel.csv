@@ -1,0 +1,13 @@
+Numero;Phase;Debut;Fin;DureeMinutes;Source
+1;Creation et parametrage de la machine virtuelle;11:19:33;11:19:39;0.1;mesure (phase neutralisee, identique dans les 3 scenarios)
+2;Installation de Windows (copie des fichiers et redemarrages);11:19:39;11:31:54;12.2;mesure
+3;Ecrans de bienvenue OOBE (langue, clavier, reseau, compte);11:31:54;13:13:06;48.2;mesure 101.2 min moins 53 min de pause technicien ; inclut aussi le renommage (phase 4)
+4;Renommage du poste et groupe de travail;13:13:06;13:13:07;0.0;fusionnee dans la phase 3 (voir journal)
+5;Creation des comptes et politique de mot de passe;13:13:07;13:30:52;17.8;mesure
+6;Reglages regionaux (clavier, fuseau, formats);13:30:52;13:43:00;12.1;reconstitue d'apres les horodatages des captures
+7;Reseau et pare-feu;13:43:00;13:47:00;4.0;reconstitue d'apres les horodatages des captures
+8;Reglages de securite (UAC, verrouillage, SmartScreen, mises a jour);13:47:00;14:00:00;13.0;reconstitue d'apres les horodatages des captures
+9;Suppression des applications preinstallees;14:00:00;14:08:00;8.0;reconstitue d'apres les horodatages des captures
+10;Installation des logiciels metier (socle commun);14:14:23;14:28:53;14.5;mesure
+11;Creation de l arborescence et des droits NTFS;14:28:53;14:37:27;8.6;mesure
+12;Verification finale (controle de conformite + correction des 13 ecarts);14:37:27;14:49:00;11.6;mesure a la montre - le chronometre avait ete cloture par erreur
