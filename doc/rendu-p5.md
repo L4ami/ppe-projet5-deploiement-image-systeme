@@ -8,17 +8,18 @@
 
 ## Sommaire
 
-1. [Le problème à résoudre](#1--le-problème-à-résoudre)
-2. [Méthode retenue et justification des outils](#2--méthode-retenue-et-justification-des-outils)
-3. [Cahier des charges du poste standard](#3--cahier-des-charges-du-poste-standard)
-4. [Le poste de référence STD-PG-01, construit à la main](#4--le-poste-de-référence-std-pg-01-construit-à-la-main)
-5. [Le contrôle de conformité, ou comment savoir ce qu'on a livré](#5--le-contrôle-de-conformité-ou-comment-savoir-ce-quon-a-livré)
-6. [Le déploiement automatisé STD-PG-02](#6--le-déploiement-automatisé-std-pg-02)
-7. [L'image système STD-PG-03 (Sysprep + Clonezilla)](#7--limage-système-std-pg-03-sysprep--clonezilla)
-8. [Comparatif de temps](#8--comparatif-de-temps)
-9. [Problèmes rencontrés et solutions](#9--problèmes-rencontrés-et-solutions)
-10. [Méthodes et notions acquises](#10--méthodes-et-notions-acquises)
-11. [Conclusion](#11--conclusion)
+1. Le problème à résoudre
+2. Méthode retenue et justification des outils
+3. Cahier des charges du poste standard
+4. **Les livrables : le fichier de réponses et les scripts**
+5. Le poste de référence STD-PG-01, construit à la main
+6. Le contrôle de conformité, ou comment savoir ce qu'on a livré
+7. Le déploiement automatisé STD-PG-02
+8. L'image système (Sysprep + Clonezilla)
+9. Comparatif de temps
+10. Problèmes rencontrés et solutions
+11. Méthodes et notions acquises
+12. Conclusion
 
 ---
 
@@ -161,7 +162,163 @@ d'utilisateurs.
 
 ---
 
-## 4 — Le poste de référence STD-PG-01, construit à la main
+## 4 — Les livrables : le fichier de réponses et les scripts
+
+Le déploiement repose sur **cinq fichiers** : un fichier de réponses et quatre
+scripts PowerShell. Ils font au total une trentaine de kilo-octets — à comparer aux
+dix gigaoctets d'une image disque. Voici ce que fait chacun et, surtout, pourquoi il
+est écrit comme ça.
+
+### `autounattend.xml` — le fichier de réponses
+
+Un fichier de réponses est un fichier texte que Windows Setup lit automatiquement s'il
+le trouve **à la racine** d'un lecteur amovible ou d'un CD. Il contient à l'avance les
+réponses aux questions de l'installation.
+
+Sa particularité est de s'exécuter en **trois passes indépendantes**, à trois moments
+différents :
+
+| Passe | Moment | Ce qu'on y met |
+|---|---|---|
+| `windowsPE` | avant que Windows existe | langue de Setup, partitionnement, édition, licence |
+| `specialize` | Windows copié sur le disque | nom du poste, fuseau horaire, groupe de travail |
+| `oobeSystem` | premier démarrage | comptes, écrans de bienvenue, commandes de première session |
+
+La version finale ne conserve que **`windowsPE`** — les deux autres passes échouaient
+systématiquement sur cette build (voir chapitre 10, problème P7). Trois choix
+méritent d'être expliqués :
+
+**Le partitionnement extensible.** La partition Windows est déclarée avec
+`Extend = true` plutôt qu'avec une taille fixe :
+
+```xml
+<CreatePartition wcm:action="add">
+  <Order>3</Order>
+  <Type>Primary</Type>
+  <Extend>true</Extend>
+</CreatePartition>
+```
+
+Conséquence : **le même fichier fonctionne sur un disque de 60 Go comme sur un disque
+de 1 To**, sans jamais être modifié. C'est la raison pour laquelle le cahier des
+charges renonce à une partition de récupération séparée, qui aurait imposé de figer
+les tailles.
+
+**L'édition désignée par une clé, pas par un nom.** Sur le média français, l'édition
+s'appelle « Windows 11 **Professionnel** ». Un fichier qui la désigne par son nom
+échoue sur ce média. Le nôtre passe par la **clé générique Microsoft** de Windows 11
+Pro, qui n'active rien mais indique à Setup quelle édition extraire — indépendamment
+de la langue.
+
+**La neutralisation des contrôles matériels.** Cinq commandes de registre écrites dans
+`HKLM\SYSTEM\Setup\LabConfig` désactivent les vérifications TPM, Secure Boot, RAM,
+processeur et disque. C'est une concession au laboratoire, documentée comme telle : sur
+le parc physique réel, le cahier des charges impose TPM 2.0 et Secure Boot, et ce bloc
+doit être retiré.
+
+### `p5-post-install.ps1` — la configuration du poste
+
+C'est le cœur du déploiement : **9 étapes**, de l'identité du poste au rapport final.
+Quatre principes ont guidé son écriture.
+
+**Il est idempotent.** Le relancer ne casse rien : chaque étape vérifie l'état avant
+d'agir. Un compte déjà présent n'est pas recréé, un poste déjà nommé n'est pas
+renommé. C'est indispensable pour un script de déploiement — on doit pouvoir le
+relancer sur un poste à moitié configuré, ou pour remettre en conformité un poste qui
+a dérivé.
+
+**Il chronomètre et journalise tout.** Chaque étape passe par une fonction unique qui
+mesure sa durée et capture ses erreurs sans interrompre le reste :
+
+```powershell
+function Invoke-Etape {
+    param([string]$Nom, [scriptblock]$Action)
+    $chrono = [System.Diagnostics.Stopwatch]::StartNew()
+    $statut = 'OK'
+    try { & $Action } catch { $statut = 'ECHEC'; Write-Warning $_.Exception.Message }
+    $chrono.Stop()
+    $script:Etapes += [pscustomobject]@{
+        Etape = $Nom; Statut = $statut
+        Secondes = [math]::Round($chrono.Elapsed.TotalSeconds, 1)
+    }
+}
+```
+
+C'est ce qui produit le comparatif de temps du chapitre 9 : les durées ne sont pas
+estimées, elles sont mesurées par le script lui-même. En plus, `Start-Transcript`
+écrit une transcription complète **au fil de l'eau** — pas à la fin — pour qu'une
+interruption ne fasse pas tout perdre.
+
+**Il désigne les objets Windows par leur identifiant, jamais par leur nom.** Les
+groupes locaux et les règles de pare-feu sont traduits : `Administrators` s'appelle
+`Administrateurs` sur un Windows français. Un script qui les nomme casse dès qu'on
+change de langue. Le nôtre utilise les **SID** (`S-1-5-32-544` pour Administrateurs,
+`S-1-5-32-545` pour Utilisateurs) et les **identifiants de ressource** des règles de
+pare-feu (`@FirewallAPI.dll,-32752` pour la découverte de réseau). Ces identifiants
+sont invariants.
+
+**Il est paramétrable.** Le numéro du poste se donne en paramètre, se lit dans le
+fichier `poste.txt` du média, ou à défaut se déduit du numéro de série du matériel.
+C'est ce qui permet d'utiliser **un seul fichier de réponses et un seul script pour
+les dix postes**.
+
+### `p5-verifier-conformite.ps1` — la preuve
+
+Ce script lit l'état réel de la machine et le compare, point par point, au cahier des
+charges : **59 contrôles** répartis en 9 catégories. Il repose sur une seule fonction,
+qui prend une exigence, une valeur attendue et un moyen de mesurer la valeur réelle :
+
+```powershell
+Test-Exigence 'Securite' 'Verrouillage auto apres 900 s' '900' {
+    Get-ValeurRegistre $polSystem 'InactivityTimeoutSecs'
+}
+```
+
+Cinq modes de comparaison sont disponibles (égalité, contient, motif, vrai/faux,
+supérieur ou égal), ce qui permet d'écrire aussi bien « le nom doit correspondre au
+motif `STD-PG-NN` » que « la mémoire doit être d'au moins 8 Go ».
+
+Il produit un score, un fichier CSV et un **rapport HTML** lisible. Le verdict n'est
+pas qu'une histoire de pourcentage : le critère d'acceptation est **score ≥ 95 % ET
+zéro écart en catégorie Sécurité**. Un poste à 98 % dont le verrouillage de compte est
+mal réglé reste refusé.
+
+### `p5-creer-iso-config.ps1` — le média de déploiement
+
+Il fabrique l'ISO de 124 Ko qui contient le fichier de réponses et les scripts,
+**sans aucun outil externe** : il pilote **IMAPI2**, le composant de gravure intégré à
+Windows depuis Vista, via des objets COM. Aucune dépendance à installer, donc le
+projet fonctionne sur n'importe quel poste Windows.
+
+Il synchronise aussi automatiquement le contenu du média avec le dossier `scripts\`
+avant chaque fabrication — impossible d'oublier de mettre à jour l'ISO après avoir
+corrigé un script, une erreur qui a été commise une fois pendant le projet.
+
+### `p5-chrono.ps1` — l'instrument de mesure
+
+Un chronomètre à tours : il affiche une phase, note l'heure, attend une frappe, et
+passe à la suivante. Sa valeur tient à deux propriétés : il applique **le même
+découpage et le même instrument** aux deux scénarios — comparer deux chiffres obtenus
+par deux méthodes différentes n'aurait aucune valeur — et il écrit son CSV **après
+chaque phase**, avec un paramètre de reprise, correction apportée après avoir failli
+perdre toutes les mesures en fermant la fenêtre par accident.
+
+### Ce que ces cinq fichiers représentent
+
+| | Image disque | Ces fichiers |
+|---|---|---|
+| Taille | ~10 Go | **~30 Ko** |
+| Versionnable dans Git | non | **oui, avec l'historique** |
+| Modifier un paramètre | restaurer, modifier, re-sysprep, recapturer | **changer une ligne** |
+| Dépend du matériel | oui | **non** |
+| Relisible par un humain | non | **oui** |
+
+C'est tout l'argument du projet : on ne transporte pas un disque, on transporte une
+**description** du poste voulu.
+
+---
+
+## 5 — Le poste de référence STD-PG-01, construit à la main
 
 La consigne demande un poste de référence. Il a été construit **entièrement
 manuellement**, écran par écran, en chronométrant chacune des **12 phases**. Ce
@@ -298,7 +455,7 @@ anglais.
 
 ---
 
-## 5 — Le contrôle de conformité, ou comment savoir ce qu'on a livré
+## 6 — Le contrôle de conformité, ou comment savoir ce qu'on a livré
 
 Un poste « conforme au cahier des charges », ça ne se constate pas à l'œil. J'ai donc
 écrit un script qui lit l'état réel de la machine et le compare, point par point, à ce
@@ -383,7 +540,7 @@ C'est l'argument central de ce projet, et il ne porte pas sur la vitesse :
 
 ---
 
-## 6 — Le déploiement automatisé STD-PG-02
+## 7 — Le déploiement automatisé STD-PG-02
 
 ### Le média de déploiement
 
@@ -485,7 +642,7 @@ oublier ; un humain, si.
 
 ---
 
-## 7 — L'image système (Sysprep + Clonezilla)
+## 8 — L'image système (Sysprep + Clonezilla)
 
 Cette branche a été **étudiée et entièrement documentée**, mais **non exécutée**,
 faute de temps. La procédure complète est dans le dépôt
@@ -538,7 +695,7 @@ homogène, hors ligne, sans accès Internet pour winget.
 
 ---
 
-## 8 — Comparatif de temps
+## 9 — Comparatif de temps
 
 Les deux scénarios ont été mesurés avec **le même instrument** : un script
 chronomètre (`p5-chrono.ps1`) qui enregistre l'heure de début et de fin de chaque
@@ -637,7 +794,7 @@ ci-dessus.
 
 ---
 
-## 9 — Problèmes rencontrés et solutions
+## 10 — Problèmes rencontrés et solutions
 
 Huit incidents ont jalonné ce projet. Ils sont consignés ici avec leur cause réelle et
 la correction appliquée — plusieurs ont plus appris que les étapes qui ont fonctionné
@@ -695,7 +852,7 @@ défaut. C'est une limite méthodologique à assumer.
 
 ### P6 — Le contrôle de conformité refuse le poste de référence
 
-Traité en détail au chapitre 5. Treize écarts, dont deux dus à des défauts de l'outil
+Traité en détail au chapitre 6. Treize écarts, dont deux dus à des défauts de l'outil
 de contrôle lui-même et **six applications « désinstallées » qui étaient toujours
 présentes**.
 
@@ -757,7 +914,7 @@ l'onglet pour que le fichier puisse être modifié. La présence des fichiers
 
 ---
 
-## 10 — Méthodes et notions acquises
+## 11 — Méthodes et notions acquises
 
 ### Désigner les objets Windows par leur identifiant, pas par leur nom
 
@@ -833,7 +990,7 @@ script de post-installation, lui, n'avait pas ce défaut : il utilise
 
 ---
 
-## 11 — Conclusion
+## 12 — Conclusion
 
 Le projet demandait une méthode de déploiement standardisée, un test sur une seconde
 machine et un comparatif de temps. Les trois sont là, mesurés :
